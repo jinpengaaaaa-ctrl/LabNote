@@ -1,0 +1,71 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+          - os: macos-latest
+            name: macos
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build app
+        run: |
+          pyinstaller run.py --name LabNote --windowed --noconfirm --clean
+
+      - name: Zip Windows build
+        if: matrix.name == 'windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/LabNote/* -DestinationPath LabNote-Windows.zip
+
+      - name: Zip macOS build
+        if: matrix.name == 'macos'
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent dist/LabNote.app LabNote-macOS.zip
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LabNote-${{ matrix.name }}
+          path: |
+            LabNote-Windows.zip
+            LabNote-macOS.zip
+          if-no-files-found: ignore
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            LabNote-Windows.zip
+            LabNote-macOS.zip
+          generate_release_notes: true
